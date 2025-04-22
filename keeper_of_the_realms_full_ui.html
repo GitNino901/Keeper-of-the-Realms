@@ -1,0 +1,151 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Keeper of the Realms</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin:0; background:#111; color:#eee; font-family:Consolas, monospace; display:flex; flex-direction:column; height:100vh; }
+    #header { background:#1e1e1e; padding:1em; text-align:center; font-size:1.4em; font-weight:bold; }
+    #hud { display:flex; justify-content:space-around; padding:0.5em; background:#222; font-size:0.9em; }
+    .hud-item { text-align:center; }
+    #chat { flex:1; overflow-y:auto; padding:1em; background:#151515; }
+    #inputRow { display:flex; border-top:1px solid #333; }
+    #inputBox { flex:1; padding:1em; font-size:1em; border:none; background:#222; color:#fff; }
+    #sendBtn { padding:1em; background:#3498db; color:white; font-weight:bold; border:none; }
+    #menuBar { display:flex; justify-content:space-around; padding:0.5em; background:#1a1a1a; }
+    .menuBtn { padding:0.5em 1em; background:#2a2a2a; border:1px solid #444; color:#fff; border-radius:4px; }
+    .panel { display:none; padding:1em; background:#121212; overflow-y:auto; height:30vh; border-top:1px solid #333; }
+    ul { padding-left:1em; }
+    pre.map { font-family:monospace; white-space:pre; background:#000; padding:0.5em; }
+  </style>
+</head>
+<body>
+
+<div id="header">🧙 Keeper of the Realms</div>
+
+<div id="hud">
+  <div class="hud-item">HP: <span id="hp">--</span></div>
+  <div class="hud-item">MP: <span id="mp">--</span></div>
+  <div class="hud-item">Gold: <span id="gold">--</span></div>
+</div>
+
+<div id="chat">Welcome, adventurer. Speak your command...</div>
+
+<div id="inputRow">
+  <input id="inputBox" placeholder="Type your action..." />
+  <button id="sendBtn">Send</button>
+</div>
+
+<div id="menuBar">
+  <button class="menuBtn" onclick="togglePanel('inventory')">Inventory</button>
+  <button class="menuBtn" onclick="togglePanel('map')">Map</button>
+  <button class="menuBtn" onclick="togglePanel('log')">Log</button>
+</div>
+
+<div id="inventory" class="panel">
+  <h4>Inventory</h4>
+  <ul id="invList"><li>Empty...</li></ul>
+</div>
+<div id="map" class="panel">
+  <h4>Map</h4>
+  <pre id="mapText" class="map">(no map loaded)</pre>
+</div>
+<div id="log" class="panel">
+  <h4>Event Log</h4>
+  <ul id="eventLog"></ul>
+</div>
+
+<script>
+const chat = document.getElementById("chat");
+const input = document.getElementById("inputBox");
+const send = document.getElementById("sendBtn");
+const hpTxt = document.getElementById("hp");
+const mpTxt = document.getElementById("mp");
+const goldTxt = document.getElementById("gold");
+const invList = document.getElementById("invList");
+const mapText = document.getElementById("mapText");
+const eventLog = document.getElementById("eventLog");
+
+let KEY = localStorage.getItem("openai_key");
+if (!KEY) {
+  KEY = prompt("Enter your OpenAI API key:");
+  localStorage.setItem("openai_key", KEY);
+}
+
+let history = [
+  { role: "system", content: "You are the GM of a fantasy RPG. Respond as immersive Keeper of the Realms. After each reply, append a hidden JSON state like <STATE>{"hp":80,"mp":45,"gold":22,"inv":["Axe","Potion"],"map":"[W] Mountains\n[X] Forest (You)\n[E] River"}</STATE> and never mention it." }
+];
+
+function appendMessage(msg, who = "🧑‍🎮") {
+  const div = document.createElement("div");
+  div.innerHTML = `<b>${who}</b>: ${msg}`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function togglePanel(id) {
+  for (let panel of document.querySelectorAll(".panel")) panel.style.display = "none";
+  const p = document.getElementById(id);
+  if (p) p.style.display = "block";
+}
+
+async function askGPT(text) {
+  appendMessage(text, "🧑‍🎮");
+  input.value = "";
+  history.push({ role: "user", content: text });
+  appendMessage("<i>...thinking</i>", "🤖");
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-3.5-turbo",
+        messages: history
+      })
+    });
+
+    const data = await res.json();
+    const reply = data.choices[0].message.content;
+    chat.lastChild.remove();
+    appendMessage(reply, "🤖");
+    history.push({ role: "assistant", content: reply });
+
+    const state = extractState(reply);
+    if (state) updateHUD(state);
+  } catch (err) {
+    chat.lastChild.remove();
+    appendMessage("⚠️ Error: " + err.message, "💥");
+  }
+}
+
+function extractState(text) {
+  const m = text.match(/<STATE>([\s\S]*?)<\/STATE>/);
+  if (!m) return null;
+  try { return JSON.parse(m[1]); }
+  catch (e) { console.error("Bad JSON", e); return null; }
+}
+
+function updateHUD(s) {
+  hpTxt.textContent = s.hp ?? "--";
+  mpTxt.textContent = s.mp ?? "--";
+  goldTxt.textContent = s.gold ?? "--";
+  invList.innerHTML = s.inv ? s.inv.map(i=>`<li>${i}</li>`).join("") : "<li>Empty</li>";
+  mapText.textContent = s.map || "(map missing)";
+  const li = document.createElement("li");
+  li.textContent = `Turn update: HP ${s.hp}, MP ${s.mp}, Gold ${s.gold}`;
+  eventLog.appendChild(li);
+  eventLog.scrollTop = eventLog.scrollHeight;
+}
+
+send.onclick = () => { if (input.value.trim()) askGPT(input.value.trim()); };
+input.addEventListener("keydown", e => { if (e.key === "Enter") send.click(); });
+</script>
+
+</body>
+</html>
