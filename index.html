@@ -1,143 +1,83 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>ChatGPT + Live HUD (Mobile‑Ready)</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  body      {margin:0;background:#141414;color:#eee;font-family:Consolas,monospace;display:flex;height:100vh}
-  #chatPane {flex:2;display:flex;flex-direction:column;border-right:2px solid #222}
-  #log      {flex:1;overflow:auto;padding:12px}
-  #hudPane  {flex:1;padding:16px;background:#1e1e1e}
-  #inputRow {display:flex;border-top:2px solid #222}
-  #userInput{flex:1;border:none;padding:12px;font-size:1em;background:#222;color:#eee}
-  #sendBtn  {background:#3498db;border:none;color:#fff;font-size:1em;padding:0 18px}
-  .barWrap  {background:#333;border-radius:4px;margin:6px 0;height:14px;overflow:hidden}
-  .bar      {height:14px;transition:width .25s}
-  .hp       {background:#c0392b}
-  .mp       {background:#2e86de}
-  .fadeIn   {animation:fade .25s ease-out}
-  @keyframes fade{from{opacity:0}to{opacity:1}}
-</style>
+  <meta charset="UTF-8">
+  <title>Keeper of the Realms</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin:0; padding:0; font-family:Consolas, monospace; background:#111; color:#eee; display:flex; flex-direction:column; height:100vh; }
+    #log { flex:1; overflow-y:auto; padding:1em; border-bottom:1px solid #333; }
+    #inputRow { display:flex; }
+    #inputBox { flex:1; padding:1em; font-size:1em; border:none; background:#222; color:#fff; }
+    #sendBtn { padding:1em; background:#3498db; color:#fff; border:none; font-weight:bold; }
+  </style>
 </head>
 <body>
 
-<!-- Chat column -->
-<div id="chatPane">
-  <div id="log"></div>
-  <div id="inputRow">
-      <input id="userInput" placeholder="Type…" autocomplete="off"/>
-      <button id="sendBtn">Send</button>
-  </div>
+<div id="log">🧙 Keeper of the Realms awaits...</div>
+<div id="inputRow">
+  <input id="inputBox" placeholder="Type your action..." />
+  <button id="sendBtn">Send</button>
 </div>
-
-<!-- HUD column -->
-<div id="hudPane">
-  <h3>PLAYER HUD</h3>
-  <div>HP: <span id="hpTxt">---</span></div>
-  <div class="barWrap"><div id="hpBar" class="bar hp" style="width:0%"></div></div>
-  <div>MP: <span id="mpTxt">---</span></div>
-  <div class="barWrap"><div id="mpBar" class="bar mp" style="width:0%"></div></div>
-  <h4>Inventory</h4>
-  <ul id="invList"></ul>
-</div>
-
-<!-- Libraries: markdown renderer + axios -->
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 
 <script>
-/* === CONFIG === */
-let OPENAI_KEY = localStorage.getItem('openai_key') || "";
-if(!OPENAI_KEY){
-  OPENAI_KEY = prompt("Paste your OpenAI API key");
-  localStorage.setItem('openai_key', OPENAI_KEY);
-}
+  const log = document.getElementById("log");
+  const input = document.getElementById("inputBox");
+  const send = document.getElementById("sendBtn");
 
-/* === DOM refs === */
-const logBox    = document.getElementById('log');
-const userInput = document.getElementById('userInput');
-const sendBtn   = document.getElementById('sendBtn');
-const hpBar     = document.getElementById('hpBar');
-const mpBar     = document.getElementById('mpBar');
-const hpTxt     = document.getElementById('hpTxt');
-const mpTxt     = document.getElementById('mpTxt');
-const invList   = document.getElementById('invList');
-
-/* === Chat history === */
-const history = [
- {role:"system",content:`You are both Game Master and UI renderer.
-After every reply, append a hidden JSON block like:
-<STATE>{"hp":120,"hpMax":120,"mp":50,"mpMax":50,"inv":["Potion"]}</STATE>
-Never reveal the STATE tag to the user.`}
-];
-
-/* === Helpers === */
-function appendMsg(icon, markdown){
-  const div=document.createElement('div');
-  div.className='fadeIn';
-  div.innerHTML=`<b>${icon}</b> `+marked.parseInline(markdown);
-  logBox.appendChild(div);
-  logBox.scrollTop=logBox.scrollHeight;
-}
-
-/* === Send logic === */
-function send(){
-  const text=userInput.value.trim();
-  if(!text) return;
-  appendMsg('🧑‍🎮', text);
-  history.push({role:"user",content:text});
-  userInput.value="";
-  callOpenAI();
-}
-
-/* === Event bindings === */
-sendBtn.addEventListener('click', send);
-userInput.addEventListener('keydown', e=>{ if(e.key==="Enter"){ send(); }});
-
-/* === OpenAI call === */
-async function callOpenAI(){
-  appendMsg('🤖', '*…thinking…*');
-  const thinking=logBox.lastChild;
-
-  try{
-    const res=await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      {model:"gpt-4o-mini",messages:history,temperature:0.8},
-      {headers:{Authorization:`Bearer ${OPENAI_KEY}`}}
-    );
-    thinking.remove();
-    const reply=res.data.choices[0].message.content;
-    parseReply(reply);
-    history.push({role:"assistant",content:reply});
-  }catch(err){
-    thinking.remove();
-    appendMsg('⚠️','**Error:** '+err.message);
+  // Prompt once for your API key
+  let KEY = localStorage.getItem("openai_key");
+  if (!KEY) {
+    KEY = prompt("Enter your OpenAI API key:");
+    localStorage.setItem("openai_key", KEY);
   }
-}
 
-/* === Parse GPT reply & update HUD === */
-function parseReply(raw){
-  const stateMatch=raw.match(/<STATE>([\\s\\S]*?)<\\/STATE>/);
-  const visible   =raw.replace(/<STATE>[\\s\\S]*?<\\/STATE>/,'').trim();
-  appendMsg('🤖', visible || '*no response*');
+  let history = [
+    { role: "system", content: "You are the Game Master in a fantasy RPG. Narrate responses like a Dungeon Master." }
+  ];
 
-  if(stateMatch){
-    try{
-      const s=JSON.parse(stateMatch[1]);
-      renderHUD(s);
-    }catch(e){console.warn("Bad STATE JSON",e);}
+  function append(msg, role = "🤖") {
+    const div = document.createElement("div");
+    div.innerHTML = `<b>${role}</b>: ${msg}`;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
   }
-}
 
-/* === Render HUD === */
-function renderHUD(s){
-  hpTxt.textContent=`${s.hp} / ${s.hpMax}`;
-  mpTxt.textContent=`${s.mp} / ${s.mpMax}`;
-  hpBar.style.width=(s.hp/s.hpMax*100)+"%";
-  mpBar.style.width=(s.mp/s.mpMax*100)+"%";
-  invList.innerHTML=s.inv.map(x=>`<li>${x}</li>`).join("");
-}
+  async function askGPT(text) {
+    append(text, "🧑‍🎮");
+    input.value = "";
+    history.push({ role: "user", content: text });
+    append("*thinking...*");
+    
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-3.5-turbo",
+        messages: history
+      })
+    });
+
+    const data = await res.json();
+    const reply = data.choices[0].message.content;
+    log.lastChild.remove();
+    append(reply);
+    history.push({ role: "assistant", content: reply });
+  }
+
+  function sendInput() {
+    const text = input.value.trim();
+    if (text) askGPT(text);
+  }
+
+  send.onclick = sendInput;
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") sendInput();
+  });
 </script>
+
 </body>
 </html>
